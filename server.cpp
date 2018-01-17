@@ -95,7 +95,7 @@ void processThread(int newsockfd, ClientCounter & cc )
        cout << "Message received " << buffer  << endl;
 
        /* Write a response to the client */
-       string response = string("ACK! Msg Received! Your Id is: ") + std::to_string(safeC.get());
+       string response = string("ACK! Msg Received! Your Id is: ") + std::to_string(safeC.get()) + "\n";
        n = write(newsockfd,response.c_str(),response.length());
 
        if (n < 0) {
