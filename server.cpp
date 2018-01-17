@@ -60,7 +60,7 @@ void sigintHandler(int sig_num)
         perror("ERROR writing to socket");
         exit(1);
     }
-    if (sockfd > 0 )
+    if (sockfd != 0 )
         close(sockfd);
     exit(0);
 }
