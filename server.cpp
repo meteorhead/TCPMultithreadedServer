@@ -13,6 +13,7 @@ using std::string;
 using std::cout;
 using std::endl;
 using std::to_string;
+using std::thread;
 
 // Struct for ID generation
 struct  SafeCounter
@@ -33,7 +34,7 @@ private:
 public:
     ClientCounter() : value(0) {}
     void increment() { ++value; }
-    void decrement() { --value; }
+    void decrement() { cout << "disconnecting one client" << endl; --value; }
    int get() { value.load() ;}
 };
 
@@ -49,7 +50,7 @@ void processThread(int newsockfd, ClientCounter &cc);
 void sigintHandler(int sig_num)
 {
     // signal(SIGINT, sigintHandler);
-    cout << "\n cleaning up before terminating with Ctrl+C " << sig_num << endl;
+    cout << "\n cleaning up before terminating with Ctrl+C from signal" << sig_num << endl;
     int n = write(sig_num,"Bye\n",4);
     if (n < 0) {
         perror("ERROR writing to socket");
@@ -79,7 +80,6 @@ void processThread(int newsockfd, ClientCounter & cc )
            cout << "clients connected " << cc.get()  << endl;
            int clients = cc.get();
            string response = string("clients connected: ") + std::to_string(clients);
-           cout << response << response.length() << endl;
            n = write(newsockfd,response.c_str(),response.length());
            return ;
        }
@@ -89,7 +89,7 @@ void processThread(int newsockfd, ClientCounter & cc )
        cout << "Message received " << buffer  << endl;
 
        /* Write a response to the client */
-       string response = "ACK! Msg Received! Your Id is: " + safeC.get();
+       string response = string("ACK! Msg Received! Your Id is: ") + std::to_string(safeC.get());
        n = write(newsockfd,response.c_str(),response.length());
         signal(SIGINT, sigintHandler);
        if (n < 0) {
@@ -99,15 +99,14 @@ void processThread(int newsockfd, ClientCounter & cc )
 
        // decrement client count
        cc.decrement();
-       // close socket
-       close(newsockfd);
+
 }
 
 int main( int argc, char *argv[] ) {
 
     int sockfd, newsockfd, portno;
     socklen_t clilen;
-    struct sockaddr_in serv_addr;
+    struct sockaddr_in serv_addr, cli_addr;
     int  n;
     ClientCounter cc;
 
@@ -142,32 +141,25 @@ int main( int argc, char *argv[] ) {
 
     listen(sockfd,MAX_CONNECTIONS);
 
+     clilen = sizeof(sockaddr_in);
+
 
     /* Accept actual connection from the client */
-    while (1)
+    while ( (newsockfd = accept(sockfd, (sockaddr *)&cli_addr, &clilen) ) )
     {
-        sockaddr_in cli_addr;
-        clilen = sizeof(cli_addr);
-        newsockfd = accept(sockfd, (sockaddr *)&cli_addr, &clilen);
-
-        if (newsockfd < 0) {
+        if ( newsockfd < 0 )
+        {
             perror("ERROR on accept");
             exit(1);
         }
-        else
-        {
-            // client connected increment var
-            cc.increment();
-            // create thread
-            auto socketThread = std::make_shared<int>(newsockfd);
-            std::thread th(processThread, *socketThread, std::ref(cc));
-            th.join();
-            cc.decrement();
-        }
-
-
+        // client connected increment var
+        cc.increment();
+        // create thread
+        thread th(processThread, newsockfd, std::ref(cc));
+        th.join();
 
     }
+
     close(sockfd);
     return 0;
 }
