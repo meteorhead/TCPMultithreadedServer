@@ -1,0 +1,1 @@
+g++ server.cpp -lpthread -o server -std=c++11
