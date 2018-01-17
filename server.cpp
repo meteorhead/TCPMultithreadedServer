@@ -34,10 +34,14 @@ private:
 public:
     ClientCounter() : value(0) {}
     void increment() { ++value; }
-    void decrement() { cout << "disconnecting one client" << endl; --value; }
+    void decrement() { --value; }
    int get() { value.load() ;}
 };
 
+// statically linked socket
+namespace {
+    std::atomic_int  sockfd{0};
+}
 
 // Max connections to be handled
 const int MAX_CONNECTIONS = 2;
@@ -49,13 +53,15 @@ void processThread(int newsockfd, ClientCounter &cc);
 
 void sigintHandler(int sig_num)
 {
-    // signal(SIGINT, sigintHandler);
+
     cout << "\n cleaning up before terminating with Ctrl+C from signal" << sig_num << endl;
     int n = write(sig_num,"Bye\n",4);
     if (n < 0) {
         perror("ERROR writing to socket");
         exit(1);
     }
+    if (sockfd > 0 )
+        close(sockfd);
     exit(0);
 }
 
@@ -91,7 +97,7 @@ void processThread(int newsockfd, ClientCounter & cc )
        /* Write a response to the client */
        string response = string("ACK! Msg Received! Your Id is: ") + std::to_string(safeC.get());
        n = write(newsockfd,response.c_str(),response.length());
-        signal(SIGINT, sigintHandler);
+
        if (n < 0) {
            perror("ERROR writing to socket");
            exit(1);
@@ -104,12 +110,12 @@ void processThread(int newsockfd, ClientCounter & cc )
 
 int main( int argc, char *argv[] ) {
 
-    int sockfd, newsockfd, portno;
+    int newsockfd, portno;
     socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
     int  n;
     ClientCounter cc;
-
+     signal(SIGINT, sigintHandler);
     /* First call to socket() function */
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -132,7 +138,7 @@ int main( int argc, char *argv[] ) {
     serv_addr.sin_port = htons(portno);
 
     /* Now bind the host address using bind() call.*/
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+    if (bind(sockfd.load() , (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
         perror("ERROR on binding");
         exit(1);
     }
@@ -157,6 +163,7 @@ int main( int argc, char *argv[] ) {
         // create thread
         thread th(processThread, newsockfd, std::ref(cc));
         th.join();
+
 
     }
 
