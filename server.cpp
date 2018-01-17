@@ -12,13 +12,38 @@
 using std::string;
 using std::cout;
 using std::endl;
+using std::to_string;
+
+// Struct for ID generation
+struct  SafeCounter
+{
+private:
+    static std::atomic<int32_t> value;
+public:
+    static void increment() { ++value; }
+
+    int get() { value.load() ;}
+};
+
+// struct for connected clients
+struct  ClientCounter
+{
+private:
+    std::atomic<int32_t> value;
+public:
+    ClientCounter() : value(0) {}
+    void increment() { ++value; }
+    void decrement() { --value; }
+   int get() { value.load() ;}
+};
+
 
 // Max connections to be handled
 const int MAX_CONNECTIONS = 2;
 // catch the Ctrl-C event and handle accordingly
 void sigintHandler(int);
 // function to be processed by a spawned thread, each time a connection is established
-void processThread(int newsockfd);
+void processThread(int newsockfd, ClientCounter &cc);
 
 
 void sigintHandler(int sig_num)
@@ -33,21 +58,14 @@ void sigintHandler(int sig_num)
     exit(0);
 }
 
-struct  SafeCounter
-{
-private:
-    std::atomic<int32_t> value;
-public:
-    SafeCounter() : value(0) {}
-    void increment() { ++value; }
-//    void decrement() { --value; }
-    int get() { value.load() ;}
-};
-
-void processThread(int newsockfd)
+std::atomic<int32_t> SafeCounter::value{0};
+void processThread(int newsockfd, ClientCounter & cc )
 {
        char buffer[256];
-    // We have an established connection at this point, trying to read
+       // We have an established connection at this point, increment value to get ID
+       SafeCounter safeC;
+       safeC.increment();
+
        bzero(buffer,256);
        int n = read( newsockfd,buffer,255 );
 
@@ -58,21 +76,29 @@ void processThread(int newsockfd)
 
        if (buffer[0] == '\n')
        {
-           cout << "close request " << endl;
-           close(newsockfd);
+           cout << "clients connected " << cc.get()  << endl;
+           int clients = cc.get();
+           string response = string("clients connected: ") + std::to_string(clients);
+           cout << response << response.length() << endl;
+           n = write(newsockfd,response.c_str(),response.length());
            return ;
        }
+
+
 
        cout << "Message received " << buffer  << endl;
 
        /* Write a response to the client */
-       n = write(newsockfd,"ACK! Msg Received!",18);
+       string response = "ACK! Msg Received! Your Id is: " + safeC.get();
+       n = write(newsockfd,response.c_str(),response.length());
         signal(SIGINT, sigintHandler);
        if (n < 0) {
            perror("ERROR writing to socket");
            exit(1);
        }
 
+       // decrement client count
+       cc.decrement();
        // close socket
        close(newsockfd);
 }
@@ -83,6 +109,7 @@ int main( int argc, char *argv[] ) {
     socklen_t clilen;
     struct sockaddr_in serv_addr;
     int  n;
+    ClientCounter cc;
 
     /* First call to socket() function */
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -129,10 +156,13 @@ int main( int argc, char *argv[] ) {
         }
         else
         {
-
+            // client connected increment var
+            cc.increment();
             // create thread
-            std::thread th(processThread, newsockfd);
+            auto socketThread = std::make_shared<int>(newsockfd);
+            std::thread th(processThread, *socketThread, std::ref(cc));
             th.join();
+            cc.decrement();
         }
 
 
